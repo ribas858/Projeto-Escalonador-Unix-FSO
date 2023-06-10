@@ -1,0 +1,4 @@
+rapido
+lento
+medio
+lento
