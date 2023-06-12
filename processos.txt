@@ -2,3 +2,8 @@ rapido
 lento
 medio
 lento
+medio
+rapido
+lento
+medio
+rapido

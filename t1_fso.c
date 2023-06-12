@@ -10,6 +10,7 @@
 #include<sys/ipc.h>
 #include<sys/shm.h>
 
+#define PROCESSOS_AUX 4
 
 typedef struct no {
     int id;
@@ -17,13 +18,10 @@ typedef struct no {
     int estado;         // 0 == Pronto, 1 == Terminou de executar
     pid_t donoProcesso; // dono == PID, sem dono == -1
     struct no *prox;
-    int idAreaMemoria;
 } processo;
 
-void insereProcesso(processo **lista, int id, char *str) {
-    int no = shmget(IPC_PRIVATE, sizeof(processo), SHM_R | SHM_W | IPC_CREAT);    
-    processo *novoProcesso;
-    novoProcesso = (processo *) shmat(no, NULL, 0);
+void insereProcesso(processo **lista, int id, char *str) {  
+    processo *novoProcesso = malloc(sizeof(processo));
 
     if(novoProcesso) {
         
@@ -33,7 +31,6 @@ void insereProcesso(processo **lista, int id, char *str) {
         novoProcesso->estado = 0;
         novoProcesso->donoProcesso = -1;
         novoProcesso->prox = NULL;
-        novoProcesso->idAreaMemoria = no;
 
         if (*lista == NULL){
             *lista = novoProcesso;
@@ -80,49 +77,45 @@ processo* buscaProcesso(processo **lista, pid_t pid) {
     return NULL;
 }
 
-void desmapMemoria(processo **lista) {
-    // int i = 0;
-    // while (*lista) {
-    //     processo *aux = (*lista)->prox;         // Salva o endereco do proximo NÓ
-    //     int idMemory = (*lista)->idAreaMemoria; // Salva o Id da memoria compartilhada
-    //     shmdt(*lista);                          // Desmapeia/Desanexa o NÓ atual
-    //     shmctl(idMemory, IPC_RMID, NULL);       // Destroi a área de memória compartilhada criada
-    //     *lista = aux;                           // lista recebe o endereço do NÓ seguinte salvo em aux, virando o NÓ atual
-    //                                             // Avança o loop
-    //     i++;                                    // Contador
-    // }
-    // // printf("Nós desanexados: %d\n", i);
-    // processo *aux = *lista;
-    // while (aux) {
-    //     processo *aux2 = aux->prox;
-    //     int idMemory = aux->idAreaMemoria;
-    //     shmdt(aux);
-    //     shmctl(idMemory, IPC_RMID, NULL);
-    //     aux = aux2;
-    // }
-    
-    
+void listaParaListaCompartilhada(processo *lista, processo *listaCompart) {
+    if(listaCompart == NULL) {
+        printf("\nMemória compartilha não existe...\n\n");
+    } else {
+        processo *auxLista = listaCompart;
+        while(lista) {
+            auxLista->id = lista->id;
+            strcpy(auxLista->nome, lista->nome);
+            auxLista->estado = lista->estado;
+            auxLista->donoProcesso = lista->donoProcesso;
+            
+            if(lista->prox == NULL) {
+                auxLista->prox = NULL;    
+            } else {
+                auxLista->prox = auxLista + 1;
+            }
+
+            auxLista = auxLista + 1;
+            
+            //printf("id:%d\n", lista->id);
+            lista = lista->prox;
+        }
+    }
 }
 
-// void atachMemoria(processo **lista) {
-//     processo *loop = *lista;
-//     while (loop) {
-//         processo *aux = loop->prox;
-//         int idMemory = loop->idAreaMemoria;
-//         *loop = (processo * ) shmat(idMemory, NULL, 0);
-//         loop = aux;
-//     }
-// }
+void liberaListaProcessos(processo **lista) {
+    while(*lista) {
+        processo *aux = (*lista)->prox;
+        free(*lista);
+        *lista = aux;
+    }
+}
 
 int main() {
 
-    processo *listaProcessosHead = NULL;
+    processo *listaProcessos = NULL;
+    processo *sharedListProcessos;
     char *read = malloc(sizeof(char) * 20);
     FILE *arqProcessos;
-    
-
-
-    
     
     arqProcessos = fopen("processos.txt", "r");
     
@@ -135,128 +128,241 @@ int main() {
         while(fgets(read, 20, arqProcessos) != NULL) {
             int tam = strlen(read);
             read[tam-1] = '\0';
-            insereProcesso(&listaProcessosHead, id, read);
+            insereProcesso(&listaProcessos, id, read);
             id++;
         }
         fclose(arqProcessos);
-        // printf("id: %d\n", id);
+        printf("Processos: %d\n", id);
 
-        desmapMemoria(&listaProcessosHead);
-        //printf("head id: %d\n" , (*listaProcessosHead).id);
-        printProcessos(listaProcessosHead);
+        int idMemoryCompart = shmget (IPC_PRIVATE, sizeof(processo) * id, SHM_R | SHM_W | IPC_CREAT);
+        sharedListProcessos = (processo *) shmat(idMemoryCompart, NULL, 0);
 
-
-        
-        // pid_t p_auxs[2];
-        // int status0 = -1;
-        // int status1 = -1;
-
-        // int mA = shmget(IPC_PRIVATE, sizeof(int) * 3, SHM_R | SHM_W | IPC_CREAT);
-        // int *a;
-        // a = (int *) shmat(mA, NULL, 0);
-
-        // *a = 42;
+        int memo = shmget(IPC_PRIVATE, sizeof(int) * 3, SHM_R | SHM_W | IPC_CREAT);
+        int *striped;
+        striped = (int *) shmat(memo, NULL, 0);
+        striped[0] = -1;    // Flag para finalizar a distribuicao dos processos
+        striped[1] = 0;     // Valor de alternancia para garantir a ordem correta na distribuicao
+        striped[2] = 0;     // Contador para percorrer a lista de processos
         
 
+        listaParaListaCompartilhada(listaProcessos, sharedListProcessos);
+        liberaListaProcessos(&listaProcessos);
+
+        pid_t p_auxs[PROCESSOS_AUX];
+        int status[PROCESSOS_AUX];
         
-
-        // for(int i=0; i<2; i++) {
-        //     p_auxs[i] = fork();
-            
-
-        //     if (p_auxs[i] == 0) {
-        //         //printf("FILHO(%d), meu pai é: %d\n", getpid(), getppid());
+        //printf("\n================= Codigo DO pai...=================\n");
+        for(int i=0; i<PROCESSOS_AUX; i++) {
+            p_auxs[i] = fork();
+            //printf("\n================= FORK() %d =================\n", i);
+            if (p_auxs[i] == 0) {
                 
-                
-        //         switch (i) {
-        //             case 0:
-        //                     printf("Sou filho(%d) pid:%d    PAI(%d)\n", i, getpid(), getppid());
-                            
-                            
+                switch (i) {
+                    case 0:
+                            striped = (int *) shmat(memo, NULL, 0);
+                            sharedListProcessos = (processo *) shmat(idMemoryCompart, NULL, 0);
 
-        //                     //atachMemoria(&listaProcessosHead);
-                            
-        //                     processo *aux = listaProcessosHead;
-        //                     while (aux) {
-        //                         aux = (processo *) shmat(aux->idAreaMemoria, NULL, 0);
-        //                         aux = aux->prox;
-        //                     }
-                            
-        //                     printProcessos(listaProcessosHead);
+                            while (striped[0] == -1) {
+                                printf("\nSou filho(%d) pid:%d    PAI(%d)\n", i, getpid(), getppid());
 
+                                if (striped[2] >= id - 1) {
+                                    striped[0] = 1;
+                                    printf("FIM============STRIPED..\n");
+                                }
 
-                            
-        //                     a = (int *) shmat(mA, NULL, 0);
-        //                     printf("A: %d --\n", *a);
-        //                     *a = 54;
-        //                     //desmapMemoria(&listaProcessosHead);
-        //                     //printProcessos(listaProcessosHead);
-        //                     strcpy(buscaProcesso(&listaProcessosHead, -1)->nome, "LUCAS");
-        //                     printProcessos(listaProcessosHead);
-        //                     // processo *retorno = buscaProcesso(&listaProcessos, -1);
-        //                     // if(retorno->id == 0) {
-        //                     //     retorno->id = 20;
-        //                     //     printf("Achou processo: %d\n", retorno->id);
-        //                     // }
-
-                            
-        //                     printf("\nPassou...\n");
-        //                     //shmdt(listaProcessos);
-
-        //                     _exit(i);
-                            
-        //                     break;
+                                //printf("Entrou strip 0..\n");
+                                while(striped[1] != 0);
+                                //printf("Passou beasy wait 0..\n");
+                                
+                                processo *aux = sharedListProcessos;
+                                if (striped[2] < id) {
+                                    aux = aux + striped[2];
+                                    aux->donoProcesso = getpid();
+                                    striped[2]++;
+                                }
                     
-        //             case 1:
-        //                     //listaProcessos = (processo *) shmat(memoriaCompartilhada, NULL, 0);
-        //                     printf("Sou filho(%d) pid:%d    PAI(%d)\n", i, getpid(), getppid());
-        //                     sleep(20);
-        //                     printf("A1: %d\n", *a);
-        //                     *a = 35;
-        //                     //printProcessos(listaProcessos);
+                                striped[1] = 1;
 
-        //                     //shmdt(listaProcessos);
+                            }
+                            
+                            
+                            printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
+                            
+                            
+                            pid_t execPid = fork();
+                            if(execPid == 0) {
+                                execl("processos/lento", "medio", (char * ) NULL);
+                            }
+                            else if(execPid < 0) {
+                                printf("Erro no fork() para o execl\n");
+                            }
 
-        //                     _exit(i);
-        //                     break;
-        //             default:
-        //                     break;
-        //         }
-        //     }
+                            shmdt(striped);
+                            shmdt(sharedListProcessos);
 
-        // }
+                            exit(i);
+                            break;
+                    
+                    case 1:
+                            striped = (int *) shmat(memo, NULL, 0);
+                            sharedListProcessos = (processo *) shmat(idMemoryCompart, NULL, 0);
 
-        // printf("PAI(%d), meu filho são: %d e %d\n\n", getpid(), p_auxs[0], p_auxs[1]);
+                            while (striped[0] == -1) {
+                                printf("\nSou filho(%d) pid:%d    PAI(%d)\n", i, getpid(), getppid());
+
+                                if (striped[2] >= id - 1) {
+                                    striped[0] = 1;
+                                }
+
+                                //printf("Entrou strip 1.. %d\n", striped[1]);
+                                while(striped[1] != 1);
+                                //printf("Passou beasy wait 1..\n");
+                                
+                                processo *aux = sharedListProcessos;
+                                if (striped[2] < id) {
+                                    aux = aux + striped[2];
+                                    aux->donoProcesso = getpid();
+                                    striped[2]++;
+                                }
+                            
+                                striped[1] = 2;
+                            }
+
+                            printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
+
+                            shmdt(striped);
+                            shmdt(sharedListProcessos);
+
+                            exit(i);
+                            break;
+                    
+                    case 2:
+                            striped = (int *) shmat(memo, NULL, 0);
+                            sharedListProcessos = (processo *) shmat(idMemoryCompart, NULL, 0);
+
+                            while (striped[0] == -1) {
+                                printf("\nSou filho(%d) pid:%d    PAI(%d)\n", i, getpid(), getppid());
+
+                                if (striped[2] >= id - 1) {
+                                    striped[0] = 1;
+                                }
+
+                                //printf("Entrou strip 2.. %d\n", striped[1]);
+                                while(striped[1] != 2);
+                                //printf("Passou beasy wait 2..\n");
+                                
+                                processo *aux = sharedListProcessos;
+                                if (striped[2] < id) {
+                                    aux = aux + striped[2];
+                                    aux->donoProcesso = getpid();
+                                    striped[2]++;
+                                }
+                            
+                                striped[1] = 3;
+                            }
+
+                            printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
+
+                            shmdt(striped);
+                            shmdt(sharedListProcessos);
+
+                            _exit(i);
+                            break;
+                    
+                    case 3:
+                            striped = (int *) shmat(memo, NULL, 0);
+                            sharedListProcessos = (processo *) shmat(idMemoryCompart, NULL, 0);
+
+                            while (striped[0] == -1) {
+                                printf("\nSou filho(%d) pid:%d    PAI(%d)\n", i, getpid(), getppid());
+
+                                if (striped[2] >= id - 1) {
+                                    striped[0] = 1;
+                                }
+
+                                //printf("Entrou strip 3.. %d\n", striped[1]);
+                                while(striped[1] != 3);
+                                //printf("Passou beasy wait 3..\n");
+                                
+                                processo *aux = sharedListProcessos;
+                                if (striped[2] < id) {
+                                    aux = aux + striped[2];
+                                    aux->donoProcesso = getpid();
+                                    striped[2]++;
+                                }
+                            
+                                striped[1] = 0;
+                            }
+
+                            printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
+
+                            shmdt(striped);
+                            shmdt(sharedListProcessos);
+
+                            _exit(i);
+                            break;
+                    
+                    default:
+                            break;
+                }
+            }
+            
+
+        }
+        // printf("\n================= FIM DO For de Forks =================\n");
+
+        printf("\nPAI(%d), meus filhos são: ", getpid());
+        for (int i=0; i<PROCESSOS_AUX; i++) {
+            printf("%d e ", p_auxs[i]);
+        }
+        printf("\n\n");
+        
         
 
-        // for(int i=0; i<2; i++) {
-        //     switch (i) {
-        //             case 0:
-        //                     wait(&status0);
-        //                     if(WIFEXITED(status0)) {
-        //                         printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status0), p_auxs[i]);
-        //                     }
-        //                     break;
+        for(int i=0; i<PROCESSOS_AUX; i++) {
+            switch (i) {
+                    case 0:
+                            wait(&status[i]);
+                            if(WIFEXITED(status[i])) {
+                                printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
+                            }
+                            break;
 
-        //             case 1:
-        //                     wait(&status1);
-        //                     if(WIFEXITED(status1)) {
-        //                         printf("Meu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status1), p_auxs[i]);
-        //                     }
-        //                     break;
-        //             default:
-        //                     break;
-        //     }
+                    case 1:
+                            wait(&status[i]);
+                            if(WIFEXITED(status[i])) {
+                                printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
+                            }
+                            break;
+
+                    case 2:
+                            wait(&status[i]);
+                            if(WIFEXITED(status[i])) {
+                                printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
+                            }
+                            break;
+                    
+                    case 3:
+                            wait(&status[i]);
+                            if(WIFEXITED(status[i])) {
+                                printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
+                            }
+                            break;
+                            
+                    default:
+                            break;
+            }
 
             
-        // }
+        }
 
-        // printf("A1: %d\n", *a);
-        //printProcessos(listaProcessosHead);
-        //desmapMemoria(&listaProcessosHead);
+        printProcessos(sharedListProcessos);
 
-        // shmdt(listaProcessosHead);
-        // shmctl(headNo, IPC_RMID, NULL);
+        shmdt(striped);
+        shmdt(sharedListProcessos);
+
+        shmctl(memo, IPC_RMID, NULL);
+        shmctl(idMemoryCompart, IPC_RMID, NULL);
     }
 
     return 0;
