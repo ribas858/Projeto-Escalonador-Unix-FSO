@@ -196,7 +196,7 @@ int leArquivo(processo **lista, char *nomeArquivo) {
     arqProcessos = fopen(nomeArquivo, "r");
 
     if (arqProcessos == NULL) {
-        printf("ERRO! O arquivo de processos não foi aberto!\n");
+        printf("\nERRO! O arquivo de processos não existe, ou o diretorio esta incorreto!\n\n");
         exit(1);
     }
     
@@ -212,6 +212,11 @@ int leArquivo(processo **lista, char *nomeArquivo) {
     }
     fclose(arqProcessos);
 
+    if(id == 0) {
+        printf("\nERRO! O arquivo de processos está vazio!\n\n");
+        exit(1);
+    }
+    
     return id;
 }
 
@@ -257,6 +262,50 @@ void striped(int *stripedFlag, processo *sharedListProcessos, int numProcessos, 
         //printf("proximo: %d | Contador: %d || filho %d\n",stripedFlag[1], stripedFlag[2], processoAux);
     }
     // Mesma lógica para o restante do processos auxiliares.
+}
+
+void execNormal(int *tempo) {
+    //printf("Procurando Processo %d\n", getpid());
+    p_sem();
+    int qtdProcessos = meusProcessos(sharedListProcessos, getpid());
+    v_sem();
+
+    while (qtdProcessos > 0) {
+
+        p_sem();
+        processo *aux = buscaProcesso(sharedListProcessos, getpid());
+        v_sem();
+
+        if(aux) {
+                printf("Achou processo..%d\n", aux->id);
+                
+                
+                
+                
+                char path[50] = {"processos/"};
+                strcat(path, aux->nome);
+
+                time_t begin = time(NULL);
+                pid_t execPid = fork();
+                if(execPid == 0) {
+                    printf("Filho(%d) - PID NETO: %d\n", getppid(), getpid());
+                    execl(path, aux->nome, (char *) NULL);
+                }
+                wait(NULL);
+                time_t end = time(NULL);
+                
+                p_sem();
+                aux->estado = 1;
+                qtdProcessos--;
+                v_sem();
+
+                *tempo = end - begin;
+                printf("\n----------------->>>>> FIM EXEC.... Tempo %d Segundos\n", *tempo);
+                p_sem();
+                *tempoTotal += *tempo;
+                v_sem();
+        }
+    }
 }
 
 int meusProcessos(processo *lista, pid_t pid) {

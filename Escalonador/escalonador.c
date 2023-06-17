@@ -3,6 +3,23 @@
 
 
 int main(int argc, char *argv[]) {
+    int modo = 0;
+    if(argc < 3) {
+        printf("\nArgumentos insuficientes:\n >>> Encontrado(%d): %s %s %s\n >>> Esperado(%d): ./escalonador ../seus_processos.txt modo(-normal ou -roubo)\n\n",argc, argv[0], argv[1], argv[2], 3);
+        exit(1);
+    } else {
+        if( strcmp(argv[2], "-normal") == 0) {
+            printf("Modo: %s\n", argv[2]);
+            modo = 1;
+        }
+        else if(strcmp(argv[2], "-roubo") == 0) {
+            printf("Modo: %s\n", argv[2]);
+            modo = 2;
+        } else {
+            printf("\nERRO! Modo de execucao nao existe! Tente: '-normal' ou '-roubo'\n\n");
+            exit(1);
+        }
+    }
     
     signal(SIGTERM, limpeza);
     signal(SIGINT, limpeza);
@@ -10,7 +27,7 @@ int main(int argc, char *argv[]) {
     
 
     if (( idsem = semget(0x1223, 1, IPC_CREAT | 0x1ff) ) < 0) {
-        printf("erro na criacao do semaforo\n");
+        printf("ERRO! Semaforo não foi criado!\n");
         exit(1);
     }
 
@@ -56,7 +73,7 @@ int main(int argc, char *argv[]) {
     //printProcessos(sharedListProcessos);
 
     pid_t p_auxs[PROCESSOS_AUX];
-    int status[PROCESSOS_AUX];
+    int status;
     
     for(int i=0; i<PROCESSOS_AUX; i++) {
         p_auxs[i] = fork();
@@ -76,54 +93,20 @@ int main(int argc, char *argv[]) {
                         striped(stripedFlag, sharedListProcessos, numProcessos, i);
                         printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
                         
-                        //printf("Qtd dos meus processos: %d\n", qtdProcessos);
-                        
                         if(stripedFlag[3] = 1) {
-                            //printf("Procurando Processo %d\n", getpid());
-                            p_sem();
-                            int qtdProcessos = meusProcessos(sharedListProcessos, getpid());
-                            v_sem();
-
-                            while (qtdProcessos > 0) {
-
-                                p_sem();
-                                processo *aux = buscaProcesso(sharedListProcessos, getpid());
-                                v_sem();
-
-                                if(aux) {
-                                        printf("Achou processo..%d\n", aux->id);
-                                        
-                                        pid_t execPid = fork();
-                                        
-                                        printf("PID NETO: %d\n", getpid());
-                                        char path[50] = {"processos/"};
-                                        strcat(path, aux->nome);
-
-                                        time_t begin = time(NULL);
-                                        if(execPid == 0) {
-                                            execl(path, aux->nome, (char *) NULL);
-                                        }
-                                        wait(NULL);
-                                        time_t end = time(NULL);
-                                        
-                                        p_sem();
-                                        aux->estado = 1;
-                                        qtdProcessos--;
-                                        v_sem();
-
-                                        tempo = end - begin;
-                                        printf("\n----------------->>>>> FIM EXEC.... Tempo %d Segundos\n", tempo);
-                                        *tempoTotal += tempo;
-                                }
+                            if(modo == 1) {
+                                execNormal(&tempo);
                             }
-                            
+                            else if(modo == 2) {
+                                // roubo
+                            }
                         }
 
                         shmdt(stripedFlag);
                         shmdt(sharedListProcessos);
                         shmdt(tempoTotal);
 
-                        exit(i);
+                        exit(0);
                         break;
                 
                 case 1:
@@ -139,55 +122,21 @@ int main(int argc, char *argv[]) {
                         striped(stripedFlag, sharedListProcessos, numProcessos, i);
 
                         printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
-
-                        //printf("Qtd dos meus processos: %d\n", qtdProcessos);
                         
                         if(stripedFlag[3] = 1) {
-                            //printf("Procurando Processo %d\n", getpid());
-                            p_sem();
-                            int qtdProcessos = meusProcessos(sharedListProcessos, getpid());
-                            v_sem();
-
-                            while (qtdProcessos > 0) {
-
-                                p_sem();
-                                processo *aux = buscaProcesso(sharedListProcessos, getpid());
-                                v_sem();
-
-                                if(aux) {
-                                        printf("Achou processo..%d\n", aux->id);
-                                        
-                                        pid_t execPid = fork();
-                                        
-                                        printf("PID NETO: %d\n", getpid());
-                                        char path[50] = {"processos/"};
-                                        strcat(path, aux->nome);
-
-                                        time_t begin = time(NULL);
-                                        if(execPid == 0) {
-                                            execl(path, aux->nome, (char *) NULL);
-                                        }
-                                        wait(NULL);
-                                        time_t end = time(NULL);
-                                        
-                                        p_sem();
-                                        aux->estado = 1;
-                                        qtdProcessos--;
-                                        v_sem();
-
-                                        tempo = end - begin;
-                                        printf("\n----------------->>>>> FIM EXEC.... Tempo %d Segundos\n", tempo);
-                                        *tempoTotal += tempo;
-                                }
+                            if(modo == 1) {
+                                execNormal(&tempo);
                             }
-                            
+                            else if(modo == 2) {
+                                // roubo
+                            }
                         }
 
                         shmdt(stripedFlag);
                         shmdt(sharedListProcessos);
                         shmdt(tempoTotal);
 
-                        exit(i);
+                        exit(1);
                         break;
                 
                 case 2:
@@ -203,55 +152,21 @@ int main(int argc, char *argv[]) {
                         striped(stripedFlag, sharedListProcessos, numProcessos, i);
 
                         printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
-
-                        //printf("Qtd dos meus processos: %d\n", qtdProcessos);
                         
                         if(stripedFlag[3] = 1) {
-                            //printf("Procurando Processo %d\n", getpid());
-                            p_sem();
-                            int qtdProcessos = meusProcessos(sharedListProcessos, getpid());
-                            v_sem();
-
-                            while (qtdProcessos > 0) {
-
-                                p_sem();
-                                processo *aux = buscaProcesso(sharedListProcessos, getpid());
-                                v_sem();
-
-                                if(aux) {
-                                        printf("Achou processo..%d\n", aux->id);
-                                        
-                                        pid_t execPid = fork();
-                                        
-                                        printf("PID NETO: %d\n", getpid());
-                                        char path[50] = {"processos/"};
-                                        strcat(path, aux->nome);
-
-                                        time_t begin = time(NULL);
-                                        if(execPid == 0) {
-                                            execl(path, aux->nome, (char *) NULL);
-                                        }
-                                        wait(NULL);
-                                        time_t end = time(NULL);
-                                        
-                                        p_sem();
-                                        aux->estado = 1;
-                                        qtdProcessos--;
-                                        v_sem();
-
-                                        tempo = end - begin;
-                                        printf("\n----------------->>>>> FIM EXEC.... Tempo %d Segundos\n", tempo);
-                                        *tempoTotal += tempo;
-                                }
+                            if(modo == 1) {
+                                execNormal(&tempo);
                             }
-                            
+                            else if(modo == 2) {
+                                // roubo
+                            }
                         }
 
                         shmdt(stripedFlag);
                         shmdt(sharedListProcessos);
                         shmdt(tempoTotal);
 
-                        _exit(i);
+                        _exit(2);
                         break;
                 
                 case 3:
@@ -267,55 +182,21 @@ int main(int argc, char *argv[]) {
                         striped(stripedFlag, sharedListProcessos, numProcessos, i);
 
                         printf("\nFIM DA DISTRIBUIÇÃO....%d\n", i);
-
-                        //printf("Qtd dos meus processos: %d\n", qtdProcessos);
                         
                         if(stripedFlag[3] = 1) {
-                            //printf("Procurando Processo %d\n", getpid());
-                            p_sem();
-                            int qtdProcessos = meusProcessos(sharedListProcessos, getpid());
-                            v_sem();
-
-                            while (qtdProcessos > 0) {
-
-                                p_sem();
-                                processo *aux = buscaProcesso(sharedListProcessos, getpid());
-                                v_sem();
-
-                                if(aux) {
-                                        printf("Achou processo..%d\n", aux->id);
-                                        
-                                        pid_t execPid = fork();
-                                        
-                                        printf("PID NETO: %d\n", getpid());
-                                        char path[50] = {"processos/"};
-                                        strcat(path, aux->nome);
-
-                                        time_t begin = time(NULL);
-                                        if(execPid == 0) {
-                                            execl(path, aux->nome, (char *) NULL);
-                                        }
-                                        wait(NULL);
-                                        time_t end = time(NULL);
-                                        
-                                        p_sem();
-                                        aux->estado = 1;
-                                        qtdProcessos--;
-                                        v_sem();
-
-                                        tempo = end - begin;
-                                        printf("\n----------------->>>>> FIM EXEC.... Tempo %d Segundos\n", tempo);
-                                        *tempoTotal += tempo;
-                                }
+                            if(modo == 1) {
+                                execNormal(&tempo);
                             }
-                            
+                            else if(modo == 2) {
+                                // roubo
+                            }
                         }
 
                         shmdt(stripedFlag);
                         shmdt(sharedListProcessos);
                         shmdt(tempoTotal);
 
-                        _exit(i);
+                        _exit(3);
                         break;
                 
                 default:
@@ -336,40 +217,30 @@ int main(int argc, char *argv[]) {
     //sleep(20);
 
     for(int i=0; i<PROCESSOS_AUX; i++) {
-        switch (i) {
+        switch (WEXITSTATUS(status)) {
                 case 0:
-                        wait(&status[i]);
-                        if(WIFEXITED(status[i])) {
-                            printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
-                        }
+                        wait(&status);
+                        printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
                         break;
 
                 case 1:
-                        wait(&status[i]);
-                        if(WIFEXITED(status[i])) {
-                            printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
-                        }
+                        wait(&status);
+                        printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
                         break;
 
                 case 2:
-                        wait(&status[i]);
-                        if(WIFEXITED(status[i])) {
-                            printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
-                        }
+                        wait(&status);
+                        printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
                         break;
                 
                 case 3:
-                        wait(&status[i]);
-                        if(WIFEXITED(status[i])) {
-                            printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status[i]), p_auxs[i]);
-                        }
+                        wait(&status);
+                        printf("\nMeu filho(%d) pid: %d , Morreu..\n\n", WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
                         break;
-                        
+
                 default:
                         break;
-        }
-
-        
+        }  
     }
 
     printProcessos(sharedListProcessos);

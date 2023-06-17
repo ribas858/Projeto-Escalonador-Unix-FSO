@@ -17,7 +17,7 @@
 #include<errno.h>
 #include<signal.h>
 
-#define PROCESSOS_AUX 2
+#define PROCESSOS_AUX 4
 
 
 
@@ -57,6 +57,8 @@ int leArquivo(processo **lista, char *nomeArquivo);
 void striped(int *stripedFlag, processo *sharedListProcessos, int numProcessos, int processoAux);
 
 int meusProcessos(processo *lista, pid_t pid);
+
+void execNormal(int *tempo);
 
 
 #endif
