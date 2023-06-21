@@ -1,5 +1,25 @@
 #include "funcs.h"
 
+int numProcessos;
+
+struct sembuf operacao[2];
+int idSemaforo;
+
+key_t memo1Key;
+key_t memo2Key;
+key_t memo3Key;
+key_t memo4Key;
+key_t semKey;
+
+int idMemoriaProcessos;
+int idMemoriaStripedVetor;
+int idMemoriaEst;
+int idMemoriaExecutou;
+
+processo *sharedListProcessos;
+int *stripedFlag;
+estatistica *listaEst;
+int *executou;
 
 
 int main(int argc, char *argv[]) {
