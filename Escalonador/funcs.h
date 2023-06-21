@@ -19,16 +19,16 @@
 #include<signal.h>
 
 #define PROCESSOS_AUX 4
-int numProcessos;
+extern int numProcessos;
 
-key_t memo1Key;
-key_t memo2Key;
-key_t memo3Key;
-key_t memo4Key;
-key_t semKey;
+extern key_t memo1Key;
+extern key_t memo2Key;
+extern key_t memo3Key;
+extern key_t memo4Key;
+extern key_t semKey;
 
-struct sembuf operacao[2];
-int idSemaforo;
+extern struct sembuf operacao[2];
+extern int idSemaforo;
 
 
 
@@ -53,15 +53,15 @@ typedef struct est {
 
 } estatistica;
 
-int idMemoriaProcessos;
-int idMemoriaStripedVetor;
-int idMemoriaEst;
-int idMemoriaExecutou;
+extern int idMemoriaProcessos;
+extern int idMemoriaStripedVetor;
+extern int idMemoriaEst;
+extern int idMemoriaExecutou;
 
-processo *sharedListProcessos;
-int *stripedFlag;
-estatistica *listaEst;
-int *executou;
+extern processo *sharedListProcessos;
+extern int *stripedFlag;
+extern estatistica *listaEst;
+extern int *executou;
 
 
 void testeArgumentos(int argc, char *argv[], int *modo);
