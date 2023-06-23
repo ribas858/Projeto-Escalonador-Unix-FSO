@@ -6,11 +6,11 @@ void testeArgumentos(int argc, char *argv[], int *modo) {
         exit(1);
     } else {
         if( strcmp(argv[2], "-normal") == 0) {
-            printf("Modo: %s\n", argv[2]);
+            printf("\n>>>>>>>>>>>>>>>>>>>>>>>> MODO: %s\n\n", argv[2]);
             *modo = 1;
         }
         else if(strcmp(argv[2], "-roubo") == 0) {
-            printf("Modo: %s\n", argv[2]);
+            printf("\n>>>>>>>>>>>>>>>>>>>>>>>> MODO: %s\n\n", argv[2]);
             *modo = 2;
         } else {
             printf("\nERRO! Modo de execucao nao existe! Tente: '-normal' ou '-roubo'\n\n");
@@ -158,6 +158,7 @@ void limpezaExec() {
     } else {
         // printf("Sucesso..6\n");
     }
+    exit(0);
 }
 
 int p_sem() {
@@ -378,9 +379,9 @@ void execNormal(int *tempo) {
         v_sem();
 
         if(aux) {
-            printf("Achou processo..%d -- estado(%d)\n", aux->id, aux->estado);
             
             if(aux->estado == 0) {
+                printf("Processo AUX(%d): Encontrei meu processo..id(%d) -- estado(%d) 'Pronto'\n\n", getpid(), aux->id, aux->estado);
                 p_sem();
                 aux->estado = 2;    // Estado 2: Executando
                 v_sem();
@@ -388,7 +389,7 @@ void execNormal(int *tempo) {
                 char path[50] = {"processos/"};
                 strcat(path, aux->nome);
 
-                idMemoriaExecutou = shmget (memo4Key, sizeof(int), 0x1ff | IPC_CREAT);
+                idMemoriaExecutou = shmget (IPC_PRIVATE, sizeof(int), 0x1ff | IPC_CREAT);
                 executou = (int *) shmat(idMemoriaExecutou, NULL, 0);
                 *executou = 1;
                 signal(SIGTERM, limpezaExec);
@@ -399,7 +400,7 @@ void execNormal(int *tempo) {
 
                 pid_t execPid = fork();
                 if(execPid == 0) {
-                    printf("Filho(%d) - PID NETO: %d\n", getppid(), getpid());
+                    //printf("Filho(%d) - PID NETO: %d\n", getppid(), getpid());
 
                     p_sem();
                     insereEstatistica(getppid(), aux, getpid(), 1);
@@ -429,19 +430,19 @@ void execNormal(int *tempo) {
                     updateEstatistica(aux->id, *tempo, aux->estado);
                     v_sem();
 
-                    printf("\n----------------->>>>> FIM EXEC.... '%s' Id(%d) Tempo %d Segundos\n\n", aux->nome, aux->id, *tempo);
+                    printf("Processo AUX(%d): --->>>>> FIM EXEC.... '%s' Id(%d) Tempo %d Segundos\n\n", getpid(), aux->nome, aux->id, *tempo);
                 } else {
-                    printf("\n----------------->>>>> ERRO! Processo '%s' Id(%d) NÃO EXECUTOU\n\n", aux->nome, aux->id);
+                    printf("Processo AUX(%d): --->>>>> ERRO! Processo '%s' Id(%d) NÃO EXECUTOU\n\n", getpid(), aux->nome, aux->id);
                     aux->estado = -1;
                     qtdProcessos--;
                 }
 
                 shmdt(executou);
                 shmctl(idMemoriaExecutou, IPC_RMID, NULL);
-                printf("Limpeza....EXEC\n");
+                printf("Processo AUX(%d): Liberando memória....EXEC\n\n", getpid());
             }
             else if(aux->estado == 3) {
-                printf("\nPUTSS Roubaram meu processo.... %d\n\n", aux->id);
+                printf("Processo AUX(%d): Processo(%d) já executado por outro AUX. estado(%d) 'Roubado'\n\n", getpid(), aux->id, aux->estado);
                 p_sem();
                 aux->estado = 1;
                 qtdProcessos--;
@@ -454,7 +455,7 @@ void execNormal(int *tempo) {
 void execRoubo(int *tempo) {
     processo *aux = buscaProcesso(sharedListProcessos, 0, 2);
         while (aux) {
-            printf("\nRoubei um processo - Dono: %d - id: %d - estado: %d\n\n", aux->donoProcesso, aux->id, aux->estado);
+            printf("Processo AUX(%d): Roubei um processo - Dono: AUX(%d) - id: %d - estado: %d\n\n", getpid(), aux->donoProcesso, aux->id, aux->estado);
             
             p_sem();
             aux->estado = 2;
@@ -463,34 +464,57 @@ void execRoubo(int *tempo) {
             char path[50] = {"processos/"};
             strcat(path, aux->nome);
 
+            idMemoriaExecutou = shmget (IPC_PRIVATE, sizeof(int), 0x1ff | IPC_CREAT);
+            executou = (int *) shmat(idMemoriaExecutou, NULL, 0);
+            *executou = 1;
+            signal(SIGTERM, limpezaExec);
+            signal(SIGINT, limpezaExec);
+            signal(SIGSEGV, limpezaExec);
+
             time_t begin = time(NULL);
             pid_t execPid = fork();
             if(execPid == 0) {
-                printf("Filho(%d) - PID NETO: %d\n", getppid(), getpid());
+                //printf("Filho(%d) - PID NETO: %d\n", getppid(), getpid());
                 
                 p_sem();
                 insereEstatistica(getppid(), aux, getpid(), 2);
                 v_sem();
 
                 execl(path, aux->nome, (char *) NULL);
+                // printf("=>>>>>>>>>>>>>>>>>>>>>>>>> ERRO EXEC\n");
+                executou = (int *) shmat(idMemoriaExecutou, NULL, 0);
+                *executou = 0;
+
+                shmdt(executou);
+                exit(0);
             }
             wait(NULL);
             time_t end = time(NULL);
             
-            p_sem();
-            aux->estado = 3;
-            v_sem();
+            if (*executou == 1) {
+                p_sem();
+                aux->estado = 3;
+                v_sem();
 
-            *tempo = end - begin;
+                *tempo = end - begin;
 
-            p_sem();
-            updateEstatistica(aux->id, *tempo, 1);
-            v_sem();
-            
-            printf("\n---------->>>>> FIM EXEC ROUBO.... '%s' Id(%d) Tempo %d Segundos estado(%d)\n\n", aux->nome, aux->id, *tempo, aux->estado);
+                p_sem();
+                updateEstatistica(aux->id, *tempo, 1);
+                v_sem();
+                
+                printf("Processo AUX(%d): --->>>>> FIM EXEC - ROUBO '%s' Id(%d) Tempo %d Segundos\n\n", getpid(), aux->nome, aux->id, *tempo);
+            } else {
+                printf("----------------->>>>> ERRO! Processo '%s' Id(%d) NÃO EXECUTOU\n\n", aux->nome, aux->id);
+                aux->estado = -1;
+            }
+
+            shmdt(executou);
+            shmctl(idMemoriaExecutou, IPC_RMID, NULL);
+            printf("Processo AUX(%d): Liberando memória....EXEC\n\n", getpid());
 
             aux = buscaProcesso(sharedListProcessos, 0, 2);
         }
+        printf("Processo AUX(%d): Sem mais processos para executar, adeus...\n\n", getpid());
 }
 
 void insereEstatistica(int pidExecutor, processo *aux, int pid, int exec) {
