@@ -1,26 +1,23 @@
 #include "funcs.h"
 
-int numProcessos;
-
-struct sembuf operacao[2];
 int idSemaforo;
+int numProcessos;
+int idMemoriaEst;
+int idMemoriaExecutou;
+int idMemoriaProcessos;
+int idMemoriaStripedVetor;
 
+int *executou;
+int *stripedFlag;
+estatistica *listaEst;
+processo *sharedListProcessos;
+
+key_t semKey = 0x00000862;
 key_t memo1Key = 0x00000858;
 key_t memo2Key = 0x00000859;
 key_t memo3Key = 0x00000860;
-// key_t memo4Key = 0x00000861;
-key_t semKey = 0x00000862;
 
-int idMemoriaProcessos;
-int idMemoriaStripedVetor;
-int idMemoriaEst;
-int idMemoriaExecutou;
-
-processo *sharedListProcessos;
-int *stripedFlag;
-estatistica *listaEst;
-int *executou;
-
+struct sembuf operacao[2];
 
 int main(int argc, char *argv[]) {
 
@@ -29,9 +26,6 @@ int main(int argc, char *argv[]) {
     int status;
     int modo = 0;
     int tempo = 0;
-
-    
-
     pid_t p_auxs[PROCESSOS_AUX];
     processo *listaProcessos = NULL;
 
@@ -39,7 +33,6 @@ int main(int argc, char *argv[]) {
 
     numProcessos = leArquivo(&listaProcessos, argv[1]);
     printf("Processos para execução: %d\n", numProcessos);
-    //printProcessos(listaProcessos);
     
     alocaIPCs();
     signal(SIGTERM, limpeza);
@@ -57,22 +50,17 @@ int main(int argc, char *argv[]) {
 
     listaParaListaCompartilhada(listaProcessos, sharedListProcessos);
     liberaListaProcessos(&listaProcessos);
-    //printProcessos(sharedListProcessos);
-
-    
 
     for(int i=0; i<PROCESSOS_AUX; i++) {
         p_auxs[i] = fork();
+
         if (p_auxs[i] == 0) {
             
             switch (i) {
                 case 0:
-                        // printf("\n========================FILHO %d\n", i);
                         p_sem();
-                        // printf("filho %d - obtive o semaforo\n", i);
                         stripedFlag = (int *) shmat(idMemoriaStripedVetor, NULL, 0);
                         sharedListProcessos = (processo *) shmat(idMemoriaProcessos, NULL, 0);
-                        // printf("filho %d - vou liberar o semaforo\n", i);
                         v_sem();
 
                         striped(stripedFlag, sharedListProcessos, i);
@@ -87,9 +75,7 @@ int main(int argc, char *argv[]) {
                             else if(modo == 2) {
                                 // modo roubo
                                 execNormal(&tempo);
-                                
                                 printf("Processo AUX(%d): --->>>>> TERMINEI meus processos, entrando em modo Roubo...\n\n", getpid());
-
                                 execRoubo(&tempo);
                             }
                         }
@@ -101,12 +87,9 @@ int main(int argc, char *argv[]) {
                         break;
                 
                 case 1:
-                        // printf("\n========================FILHO %d\n", i);
                         p_sem();
-                        // printf("filho %d - obtive o semaforo\n", i);
                         stripedFlag = (int *) shmat(idMemoriaStripedVetor, NULL, 0);
                         sharedListProcessos = (processo *) shmat(idMemoriaProcessos, NULL, 0);
-                        // printf("filho %d - vou liberar o semaforo\n", i);
                         v_sem();
 
                         striped(stripedFlag, sharedListProcessos, i);
@@ -121,9 +104,7 @@ int main(int argc, char *argv[]) {
                             else if(modo == 2) {
                                 // modo roubo
                                 execNormal(&tempo);
-                                
                                 printf("Processo AUX(%d): --->>>>> TERMINEI meus processos, entrando em modo Roubo...\n\n", getpid());
-
                                 execRoubo(&tempo);
                             }
                         }
@@ -135,12 +116,9 @@ int main(int argc, char *argv[]) {
                         break;
                 
                 case 2:
-                        // printf("\n========================FILHO %d\n", i);
                         p_sem();
-                        // printf("filho %d - obtive o semaforo\n", i);
                         stripedFlag = (int *) shmat(idMemoriaStripedVetor, NULL, 0);
                         sharedListProcessos = (processo *) shmat(idMemoriaProcessos, NULL, 0);
-                        // printf("filho %d - vou liberar o semaforo\n", i);
                         v_sem();
 
                         striped(stripedFlag, sharedListProcessos, i);
@@ -155,9 +133,7 @@ int main(int argc, char *argv[]) {
                             else if(modo == 2) {
                                 // modo roubo
                                 execNormal(&tempo);
-                                
                                 printf("Processo AUX(%d): --->>>>> TERMINEI meus processos, entrando em modo Roubo...\n\n", getpid());
-
                                 execRoubo(&tempo);
                             }
                         }
@@ -169,12 +145,9 @@ int main(int argc, char *argv[]) {
                         break;
                 
                 case 3:
-                        // printf("\n========================FILHO %d\n", i);
                         p_sem();
-                        // printf("filho %d - obtive o semaforo\n", i);
                         stripedFlag = (int *) shmat(idMemoriaStripedVetor, NULL, 0);
                         sharedListProcessos = (processo *) shmat(idMemoriaProcessos, NULL, 0);
-                        // printf("filho %d - vou liberar o semaforo\n", i);
                         v_sem();
                         
                         striped(stripedFlag, sharedListProcessos, i);
@@ -189,9 +162,7 @@ int main(int argc, char *argv[]) {
                             else if(modo == 2) {
                                 // modo roubo
                                 execNormal(&tempo);
-                                
                                 printf("Processo AUX(%d): --->>>>> TERMINEI meus processos, entrando em modo Roubo...\n\n", getpid());
-
                                 execRoubo(&tempo);
                             }
                         }
@@ -209,23 +180,18 @@ int main(int argc, char *argv[]) {
         
 
     }
-    // printf("\n================= FIM DO For de Forks =================\n");
 
     printf("\nESCALONADOR(%d): Meus filhos auxiliares são:\n\n", getpid());
     for (int i=0; i<PROCESSOS_AUX; i++) {
-        
         if(i == PROCESSOS_AUX-1) {
             printf("AUX(%d)\n\n", p_auxs[i]);
         } else {
             printf("AUX(%d), ", p_auxs[i]);
         }
     }
-    
-    //sleep(20);
 
     for(int i=0; i<PROCESSOS_AUX; i++) {
         pid_t child_pid = wait(&status);
-        
         switch (WEXITSTATUS(status)) {
                 case 0:
                         printf("ESCALONADOR(%d): Processo Auxiliar(%d) -- Pid: %d , Morreu..\n\n", getpid(), WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
@@ -247,20 +213,13 @@ int main(int argc, char *argv[]) {
                         break;
         }  
     }
-    time_t fim = time(NULL);
-    // printf("PASSOU DO WAIT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> status: %d\n", WEXITSTATUS(status));
-
-    printProcessos(sharedListProcessos);
-
-   
+    
     printEstatistica(listaEst, p_auxs);
     
     printf("\n>>>>>>>>>>>>>>>>>> MODO: %s\n\n", argv[2]);
+
+    time_t fim = time(NULL);
     printf("\n>>>>>>>>>>>>>>>>>> Tempo total de execucao da Aplicacao (Makespan): %ld Segundos\n", (fim - inicio));
 
-    
-
     limpeza();
-
-    return 0;
 }

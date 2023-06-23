@@ -2,35 +2,40 @@
 #define FUNCS_H
 
 #include<stdio.h>
-#include<string.h>
-#include <ctype.h>
 #include<stdlib.h>
+#include<string.h>
+#include<ctype.h>
 
-#include<sys/types.h>
-#include<sys/wait.h>
-
+#include<time.h>
+#include<errno.h>
+#include<signal.h>
 #include<unistd.h>
-#include <time.h>
-
 #include<sys/ipc.h>
 #include<sys/shm.h>
 #include<sys/sem.h>
-#include<errno.h>
-#include<signal.h>
+#include<sys/wait.h>
+#include<sys/types.h>
 
-#define PROCESSOS_AUX 4
+#define PROCESSOS_AUX 4 // Máximo 4 processos auxiliares
+
+extern int idSemaforo;
 extern int numProcessos;
+extern int idMemoriaEst;
+extern int idMemoriaExecutou;
+extern int idMemoriaProcessos;
+extern int idMemoriaStripedVetor;
 
+extern int *executou;
+extern int *stripedFlag;
+extern estatistica *listaEst;
+extern processo *sharedListProcessos;
+
+extern key_t semKey;
 extern key_t memo1Key;
 extern key_t memo2Key;
 extern key_t memo3Key;
-//extern key_t memo4Key;
-extern key_t semKey;
 
 extern struct sembuf operacao[2];
-extern int idSemaforo;
-
-
 
 typedef struct no {
     int id;
@@ -50,22 +55,10 @@ typedef struct est {
     int tempo;      // tempo individual
     int status;     // 1 == Terminou de executar
     int exec;       // 1 == meu processo, 2 == roubado
-
 } estatistica;
-
-extern int idMemoriaProcessos;
-extern int idMemoriaStripedVetor;
-extern int idMemoriaEst;
-extern int idMemoriaExecutou;
-
-extern processo *sharedListProcessos;
-extern int *stripedFlag;
-extern estatistica *listaEst;
-extern int *executou;
 
 
 void testeArgumentos(int argc, char *argv[], int *modo);
-
 int leArquivo(processo **lista, char *nomeArquivo);
 
 void alocaIPCs();
@@ -95,10 +88,6 @@ void execRoubo(int *tempo);
 void insereEstatistica(int pidExecutor, processo *aux, int pid, int exec);
 void updateEstatistica(int id, int tempo, int status);
 void printEstatistica(estatistica *lista, int *p_auxs);
-
-
-
-
 
 
 #endif
