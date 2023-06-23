@@ -1,4 +1,107 @@
-#include "funcs.h"
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#include<ctype.h>
+
+#include<time.h>
+#include<errno.h>
+#include<signal.h>
+#include<unistd.h>
+#include<sys/ipc.h>
+#include<sys/shm.h>
+#include<sys/sem.h>
+#include<sys/wait.h>
+#include<sys/types.h>
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// VARIÁVEIS E ESTRUTURAS
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#define PROCESSOS_AUX 4                                                         // Máximo 4 processos auxiliares
+
+// Estrutura para processos
+typedef struct no {
+    int id;
+    int estado;                                                                 // 0 == Pronto, 1 == Terminou de executar, 3 == Terminou de executar (Roubado)
+    char nome[20];
+    struct no *prox;
+    pid_t donoProcesso;                                                         // dono == PID, sem dono == -1
+} processo;
+
+// Estrutura para tabela de dados
+typedef struct est {
+    int id;
+    int pid;
+    int exec;                                                                   // 1 == meu processo, 2 == roubado
+    int tempo;                                                                  // Tempo de execução individual
+    int status;                                                                 // 1 == Terminou de executar
+    int ocupado;                                                                // 1 == ocupado, 0 disponivel
+    char nome[20];
+    int idProcessoExec;
+    int idDonoOriginal;
+} estatistica;
+
+struct sembuf operacao[2];                                                      // Estrutura de operações com Semaforos
+
+int idSemaforo;                                                                 // Id do semaforo
+int numProcessos;                                                               // Numero total de processos a serem executados
+int idMemoriaEst;                                                               // Id da memoria compartilhada 'listaEst'
+int idMemoriaExecutou;                                                          // Id da memoria compartilhada 'executou'
+int idMemoriaProcessos;                                                         // Id da memoria compartilhada 'sharedListProcessos'
+int idMemoriaStripedVetor;                                                      // Id da memoria compartilhada 'stripedFlag'
+
+int *executou;                                                                  // Variavel auxiliar no EXECL()
+int *stripedFlag;                                                               // Vetor de flags para distribuição striped
+estatistica *listaEst;                                                          // Lista de dados de execução
+processo *sharedListProcessos;                                                  // Lista encadeada de processos, no segmento de memoria compartilhada
+
+key_t semKey = 0x00000862;                                                      // Chave para semaforo
+key_t memo1Key = 0x00000858;                                                    // Chave 1 para segmento de memoria compartilhada
+key_t memo2Key = 0x00000859;                                                    // Chave 2 para segmento de memoria compartilhada
+key_t memo3Key = 0x00000860;                                                    // Chave 3 para segmento de memoria compartilhada
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// PROTÓTIPOS DE FUNÇÕES
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int p_sem();                                                                    // Semáforo: Pega permissão    
+int v_sem();                                                                    // Semáforo: Devolve permissão
+void limpeza();                                                                 // Responsável por desalocar o semaforo, e os segmentos de memória
+                                                                                // compartilhada. Tanto no fim do programa, ou no caso de receber um sinal.
+
+void alocaIPCs();                                                               // Responsável por alocar os segmentos de memória compartilhada e o semáforo.
+void limpezaExec();                                                             // Responsável por desalocar um segmento de memória compartilhada usada
+                                                                                // no auxilio da execução dos processos
+
+void execRoubo(int *tempo);                                                     // Responsável por executar o escalonamento no modo ROUBO
+void execNormal(int *tempo);                                                    // Responsável por executar o escalonamento no modo NORMAL
+void minusculas(char *read);                                                    // Responsável por passar qualquer caracter lido do nome dos
+                                                                                // processos para minusculo, e remover espaços em branco e '\n'
+
+void printProcessos(processo *lista);                                           // Responsável por printar a lista encadeada de processos atribuidos
+void liberaListaProcessos(processo **lista);                                    // Responsável por liberar a memoria da lista encadeada, após os dados
+                                                                                // serem copiados para o segmento de memória compartilhada
+
+int meusProcessos(processo *lista, pid_t pid);                                  // Responsável por retornar o numero de processos atribuidos a um processo AUX
+void executaAUX(int *tempo, int *modo, int *id);                                // Responsável executar o codigo dos processos Auxiliares
+int leArquivo(processo **lista, char *nomeArquivo);                             // Responsável por ler o arquivo e inserir os processos na lista encadeada
+void updateEstatistica(int id, int tempo, int status);                          // Responsável por atulizar o tempo e o estado de um processo na lista de dados
+void printEstatistica(estatistica *lista, int *p_auxs);                         // Responsável por printar a tabela de dados
+void testeArgumentos(int argc, char *argv[], int *modo);                        // Responsável por testar a entrada na linha de comando, afim de evitar erros
+void insereProcesso(processo **lista, int id, char *str);                       // Responsável por inserir um processo na lista encadeada
+processo* buscaProcesso(processo *lista, pid_t pid, int modo);                  // Responsável por retornar um processo, seja para o modo '1' (retorna para o dono e com estado pronto), ou, para o modo '2' (retorna o primeiro com estado pronto)
+int atribuiProcesso(int striped_dois, processo *sharedListProcessos);           // Responsável por definir o dono do processo
+void listaParaListaCompartilhada(processo *lista, processo *listaCompart);      // Responsável por copiar a lista encadeana na memoria, para outra lista encadeada no segmento de memoria compartilhada
+void insereEstatistica(int pidExecutor, processo *aux, int pid, int exec);      // Responsável por inserir os dados de execução de um processo na tabela de dados
+void striped(int *stripedFlag, processo *sharedListProcessos, int processoAux); // Responsável pela distribuição modo Striped
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// IMPLEMENTAÇÃO DAS FUNÇÕES
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Semáforo: Pega permissão
 int p_sem() {
@@ -661,3 +764,118 @@ void striped(int *stripedFlag, processo *sharedListProcessos, int processoAux) {
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// MAIN
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int main(int argc, char *argv[]) {
+
+    time_t inicio = time(NULL);                                                 // Marca do tempo de inicio (makespan)
+
+    int status;                                                                 // Variavel status para "Wait" processos AUX
+    int modo = 0;                                                               // Variavel para definir o modo de execução, normal ou roubo
+    int tempo = 0;                                                              // Variavel para calcular tempos individuais dos processos AUX
+    pid_t p_auxs[PROCESSOS_AUX];                                                // Vetor de processos AUX, seus respectivos PIDs
+    processo *listaProcessos = NULL;                                            // Lista encadeada de processos, ainda memoria local
+
+    testeArgumentos(argc, argv, &modo);                                         //
+
+    numProcessos = leArquivo(&listaProcessos, argv[1]);                         // Atribui o total de processos a serem executados
+    printf("Processos para execução: %d\n", numProcessos);
+    
+    alocaIPCs();
+    signal(SIGTERM, limpeza);                                                   // Sinais que aguardam caso seja necessário finalizar o programa por interrupções
+    signal(SIGINT, limpeza);                                                    // Caso aconteça, os segmentos e semaforos são removidos da memoria.
+    signal(SIGSEGV, limpeza);                                                   //
+
+    stripedFlag[0] = -1;                                                        // Flag para finalizar a distribuicao dos processos
+    stripedFlag[1] = 0;                                                         // Valor de alternancia para garantir a ordem correta na distribuicao
+    stripedFlag[2] = 0;                                                         // Contador para percorrer a lista de processos
+    stripedFlag[3] = 0;                                                         // Flag para encerrar processos em busy waiting
+    
+    for(int i=0; i<numProcessos; i++) {                                         // Inicializa a tabela de dados
+        listaEst[i].ocupado = 0;                                                // Marca como disponivel
+    }                                                                           //
+
+    listaParaListaCompartilhada(listaProcessos, sharedListProcessos);           //
+    liberaListaProcessos(&listaProcessos);                                      //
+
+    for(int i=0; i<PROCESSOS_AUX; i++) {                                        // Escalonador(PAI) cria processos Auxiliares (FILHOS)
+        p_auxs[i] = fork();                                                     //         
+
+        if (p_auxs[i] == 0) {                                                   // Código dos processos Auxiliares (FILHOS)
+            
+            switch (i) {
+                case 0:                                                         // Caso esteja no Auxiliar (0)
+                        executaAUX(&tempo, &modo, &i);                          // Executa código do Auxiliar (0)
+                        _exit(0);                                               // Avisa ao Escalonador(PAI) que terminou, retorna o id do AUX
+                        break;
+                
+                case 1:                                                         // Caso esteja no Auxiliar (1)
+                        executaAUX(&tempo, &modo, &i);                          // Executa código do Auxiliar (1)
+                        _exit(1);                                               // Avisa ao Escalonador(PAI) que terminou, retorna o id do AUX
+                        break;
+                
+                case 2:                                                         // Caso esteja no Auxiliar (1)
+                        executaAUX(&tempo, &modo, &i);                          // Executa código do Auxiliar (2)
+                        _exit(2);                                               // Avisa ao Escalonador(PAI) que terminou, retorna o id do AUX
+                        break;
+                
+                case 3:                                                         // Caso esteja no Auxiliar (1)
+                        executaAUX(&tempo, &modo, &i);                          // Executa código do Auxiliar (3)
+                        _exit(3);                                               // Avisa ao Escalonador(PAI) que terminou, retorna o id do AUX
+                        break;
+                
+                default:
+                        break;
+            }
+        }
+    }
+
+    printf("\nESCALONADOR(%d): Meus filhos auxiliares são:\n\n", getpid());
+    for (int i=0; i<PROCESSOS_AUX; i++) {
+        if(i == PROCESSOS_AUX-1) {
+            printf("AUX(%d)\n\n", p_auxs[i]);
+        } else {
+            printf("AUX(%d), ", p_auxs[i]);
+        }
+    }
+
+    for(int i=0; i<PROCESSOS_AUX; i++) {                                        // Loop para esperar por todos os processos Auxiliares terminarem
+        pid_t child_pid = wait(&status);                                        // Espera aqui pelo termino de algum AUX
+        switch (WEXITSTATUS(status)) {
+                case 0:
+                        printf("ESCALONADOR(%d): Processo Auxiliar(%d) -- Pid: %d , Morreu..\n\n", getpid(), WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
+                        break;
+
+                case 1:
+                        printf("ESCALONADOR(%d): Processo Auxiliar(%d) -- Pid: %d , Morreu..\n\n", getpid(), WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
+                        break;
+
+                case 2:
+                        printf("ESCALONADOR(%d): Processo Auxiliar(%d) -- Pid: %d , Morreu..\n\n", getpid(), WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
+                        break;
+                
+                case 3:
+                        printf("ESCALONADOR(%d): Processo Auxiliar(%d) -- Pid: %d , Morreu..\n\n", getpid(), WEXITSTATUS(status), p_auxs[WEXITSTATUS(status)]);
+                        break;
+
+                default:
+                        break;
+        }  
+    }
+    
+    printEstatistica(listaEst, p_auxs);
+    
+    printf("\n>>>>>>>>>>>>>>>>>> MODO: %s\n\n", argv[2]);
+
+    time_t fim = time(NULL);                                                    // Marca do tempo de fim da execução (makespan)
+    printf("\n>>>>>>>>>>>>>>>>>> Tempo total de execucao da Aplicacao (Makespan): %ld Segundos\n", (fim - inicio));
+
+    limpeza();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
